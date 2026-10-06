@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+data/
+.env
+run_all.log
+run_all.err
+hs_err_pid*.log
+replay_pid*.log
+.venv/
+
+# Flutter (mobile/)
+mobile/build/
+mobile/.dart_tool/
+mobile/.flutter-plugins*
+mobile/.packages
+mobile/*.png
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/key.properties
+mobile/android/**/*.jks
+mobile/ios/Pods/
+mobile/ios/.symlinks/
+mobile/ios/Flutter/ephemeral/
+mobile/ios/Flutter/flutter_export_environment.sh
+mobile/.idea/
+*.iml

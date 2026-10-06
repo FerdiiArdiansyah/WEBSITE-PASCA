@@ -1,0 +1,52 @@
+x-common: &common
+  build:
+    context: .
+  restart: unless-stopped
+  env_file: .env.docker
+  volumes:
+    - siakad-data:/data
+
+services:
+  auth:
+    <<: *common
+    build: { context: ., args: { SERVICE_MODULE: services.auth_service.main:app, PORT: 8001 } }
+    ports: ["8001:8001"]
+
+  notifikasi:
+    <<: *common
+    build: { context: ., args: { SERVICE_MODULE: services.notifikasi_service.main:app, PORT: 8006 } }
+    ports: ["8006:8006"]
+    depends_on: [auth]
+
+  akademik:
+    <<: *common
+    build: { context: ., args: { SERVICE_MODULE: services.akademik_service.main:app, PORT: 8002 } }
+    ports: ["8002:8002"]
+    depends_on: [auth, notifikasi]
+
+  tesis:
+    <<: *common
+    build: { context: ., args: { SERVICE_MODULE: services.tesis_service.main:app, PORT: 8003 } }
+    ports: ["8003:8003"]
+    depends_on: [akademik]
+
+  keuangan:
+    <<: *common
+    build: { context: ., args: { SERVICE_MODULE: services.keuangan_service.main:app, PORT: 8004 } }
+    ports: ["8004:8004"]
+    depends_on: [akademik]
+
+  layanan:
+    <<: *common
+    build: { context: ., args: { SERVICE_MODULE: services.layanan_service.main:app, PORT: 8005 } }
+    ports: ["8005:8005"]
+    depends_on: [akademik]
+
+  gateway:
+    <<: *common
+    build: { context: ., args: { SERVICE_MODULE: services.gateway.main:app, PORT: 8000 } }
+    ports: ["8000:8000"]
+    depends_on: [auth, akademik, tesis, keuangan, layanan, notifikasi]
+
+volumes:
+  siakad-data:
