@@ -35,6 +35,7 @@ cek("kurikulum prodi 1", c.get("/api/akademik/prodi/1/kurikulum"))
 cek("pengumuman publik", c.get("/api/layanan/pengumuman"))
 cek("kalender", c.get("/api/akademik/kalender"))
 cek("jenis surat", c.get("/api/layanan/surat/jenis"))
+cek("templat persuratan", c.get("/api/layanan/persuratan/templat"))
 cek("internal diblokir", c.get("/api/akademik/internal/mahasiswa"), ok=(403,))
 cek("tanpa token ditolak", c.get("/api/akademik/mahasiswa/me"), ok=(401,))
 r = cek("PMB daftar", c.post("/api/layanan/pmb/daftar", json={
@@ -136,6 +137,41 @@ cek("keuangan saya", c.get("/api/keuangan/saya", headers=h))
 cek("keuangan ringkasan", c.get("/api/keuangan/saya/ringkasan", headers=h))
 cek("surat saya", c.get("/api/layanan/surat/saya", headers=h))
 cek("ajukan surat", c.post("/api/layanan/surat/saya", headers=h, json={"jenis": "Surat Keterangan Aktif Kuliah", "keperluan": "Keperluan uji coba"}))
+# Persuratan berbasis templat: draf -> edit -> ajukan -> (admin) setujui
+mhs_h = h
+cek("persuratan saya", c.get("/api/layanan/persuratan/saya", headers=h))
+r = cek("persuratan buat draf", c.post("/api/layanan/persuratan/saya", headers=h, json={"jenis": "Surat Keterangan Kuliah", "keperluan": "Uji coba"}))
+ps_id = r.json().get("id")
+if ps_id:
+    draf = r.json()
+    if not all(draf.get(k) for k in ("tempat_lahir", "tanggal_lahir", "asal_sekolah")):
+        cek("persuratan ajukan belum lengkap ditolak", c.post(f"/api/layanan/persuratan/saya/{ps_id}/ajukan", headers=h), ok=(400,))
+    cek("persuratan edit", c.put(f"/api/layanan/persuratan/saya/{ps_id}", headers=h, json={
+        "nama": draf["nama"], "tempat_lahir": "Makassar", "tanggal_lahir": "1995-12-02", "asal_sekolah": "SMAN 1 Gowa",
+        "program_pendidikan": draf["program_pendidikan"], "program_studi": draf["program_studi"],
+        "semester": draf["semester"], "tahun_ajaran": draf["tahun_ajaran"], "keperluan": "Uji coba"}))
+    cek("persuratan pratinjau", c.get(f"/api/layanan/persuratan/saya/{ps_id}/dokumen", headers=h))
+    cek("persuratan ajukan", c.post(f"/api/layanan/persuratan/saya/{ps_id}/ajukan", headers=h))
+    cek("persuratan edit setelah diajukan ditolak", c.put(f"/api/layanan/persuratan/saya/{ps_id}", headers=h, json={
+        "nama": "X", "tempat_lahir": "M", "tanggal_lahir": "1995-12-02", "asal_sekolah": "S", "program_pendidikan": "S",
+        "program_studi": "S", "semester": "Ganjil", "tahun_ajaran": "2025-2026"}), ok=(400, 422))
+    ah = login("admin", "admin123")
+    cek("persuratan admin list", c.get("/api/layanan/persuratan", headers=ah, params={"status": "diajukan"}))
+    cek("persuratan admin pratinjau", c.get(f"/api/layanan/persuratan/{ps_id}/dokumen", headers=ah))
+    cek("persuratan nomor usulan", c.get(f"/api/layanan/persuratan/{ps_id}/nomor-usulan", headers=ah))
+    cek("persuratan revisi tanpa catatan ditolak", c.patch(f"/api/layanan/persuratan/{ps_id}/tinjau", headers=ah, json={"aksi": "revisi"}), ok=(400,))
+    cek("persuratan minta revisi", c.patch(f"/api/layanan/persuratan/{ps_id}/tinjau", headers=ah, json={"aksi": "revisi", "catatan": "Perbaiki asal sekolah"}))
+    cek("persuratan edit saat revisi", c.put(f"/api/layanan/persuratan/saya/{ps_id}", headers=mhs_h, json={
+        "nama": draf["nama"], "tempat_lahir": "Makassar", "tanggal_lahir": "1995-12-02", "asal_sekolah": "UPT SMAN 1 Gowa",
+        "program_pendidikan": draf["program_pendidikan"], "program_studi": draf["program_studi"],
+        "semester": draf["semester"], "tahun_ajaran": draf["tahun_ajaran"]}))
+    cek("persuratan ajukan ulang", c.post(f"/api/layanan/persuratan/saya/{ps_id}/ajukan", headers=mhs_h))
+    r = cek("persuratan setujui", c.patch(f"/api/layanan/persuratan/{ps_id}/tinjau", headers=ah, json={"aksi": "setujui"}))
+    if r.status_code == 200 and not r.json().get("nomor_surat"):
+        gagal.append(("persuratan nomor surat kosong", 200, r.text[:200]))
+    cek("persuratan dokumen final", c.get(f"/api/layanan/persuratan/saya/{ps_id}/dokumen", headers=mhs_h))
+    cek("persuratan hapus non-draf ditolak", c.delete(f"/api/layanan/persuratan/saya/{ps_id}", headers=mhs_h), ok=(400,))
+    cek("persuratan akses mahasiswa ke admin ditolak", c.get("/api/layanan/persuratan", headers=mhs_h), ok=(403,))
 cek("pengumuman untuk saya", c.get("/api/layanan/pengumuman/untuk-saya", headers=h))
 cek("notifikasi", c.get("/api/notifikasi", headers=h))
 cek("notifikasi baca semua", c.post("/api/notifikasi/baca-semua", headers=h))

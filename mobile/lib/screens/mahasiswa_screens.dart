@@ -6,6 +6,7 @@ import '../core/api.dart';
 import '../core/format.dart';
 import '../core/session.dart';
 import '../core/theme.dart';
+import '../widgets/surat_dokumen.dart';
 import '../widgets/ui.dart';
 import 'auth_screens.dart';
 import 'public_screen.dart';
@@ -171,7 +172,7 @@ class MhsAkademikMenu extends StatelessWidget {
       (Icons.fact_check_outlined, 'Presensi', 'Rekap kehadiran', AppColors.success, const MhsPresensi()),
       (Icons.description_outlined, 'KHS', 'Hasil studi per semester', AppColors.warning, const MhsKhs()),
       (Icons.workspace_premium_outlined, 'Transkrip', 'Seluruh nilai & IPK', AppColors.danger, const MhsTranskrip()),
-      (Icons.mail_outline_rounded, 'Pengajuan Surat', 'Surat keterangan & izin', const Color(0xFF8B5CF6), const MhsSurat()),
+      (Icons.mail_outline_rounded, 'Persuratan', 'Surat keterangan kuliah', const Color(0xFF8B5CF6), const MhsSurat()),
       (Icons.campaign_outlined, 'Pengumuman', 'Info resmi pascasarjana', const Color(0xFF14B8A6), const PengumumanScreen()),
     ];
     return Scaffold(
@@ -700,79 +701,251 @@ class BimbinganItem extends StatelessWidget {
 }
 
 // =============================================================== SURAT
-class MhsSurat extends StatelessWidget {
+/// Persuratan berbasis templat: mahasiswa membuat draf, mengedit isi, mengajukan; admin meninjau.
+class MhsSurat extends StatefulWidget {
   const MhsSurat({super.key});
+  @override
+  State<MhsSurat> createState() => _MhsSuratState();
+}
 
-  Future<void> _ajukan(BuildContext context, List jenis, Future<void> Function() reload) async {
-    String? j = jenis.isNotEmpty ? jenis.first : null;
+class _MhsSuratState extends State<MhsSurat> {
+  int _ver = 0;
+
+  Future<void> _buat(List templat) async {
+    String? jenis = templat.isNotEmpty ? templat.first['jenis'] : null;
     final kep = TextEditingController();
     final ok = await showModalBottomSheet<bool>(
       context: context, isScrollControlled: true,
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setS) => Padding(
-        padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('Ajukan Surat', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 14),
-          DropdownButtonFormField<String>(value: j, decoration: const InputDecoration(labelText: 'Jenis surat'), items: jenis.map((x) => DropdownMenuItem<String>(value: x, child: Text(x, style: const TextStyle(fontSize: 13)))).toList(), onChanged: (v) => setS(() => j = v)),
-          const SizedBox(height: 10),
-          TextField(controller: kep, decoration: const InputDecoration(labelText: 'Keperluan / tujuan *'), maxLines: 3),
-          const SizedBox(height: 14),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Ajukan')),
-        ]),
-      )),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
+        final t = templat.cast<Map>().where((x) => x['jenis'] == jenis).firstOrNull;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text('Buat Surat Baru', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 14),
+            DropdownButtonFormField<String>(value: jenis, decoration: const InputDecoration(labelText: 'Jenis surat'), items: templat.map((x) => DropdownMenuItem<String>(value: x['jenis'], child: Text(x['jenis'], style: const TextStyle(fontSize: 13)))).toList(), onChanged: (v) => setS(() => jenis = v)),
+            if (t != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(t['deskripsi'], style: const TextStyle(fontSize: 12, color: AppColors.muted))),
+            const SizedBox(height: 10),
+            TextField(controller: kep, decoration: const InputDecoration(labelText: 'Keperluan (opsional, untuk admin)'), maxLines: 2),
+            const SizedBox(height: 14),
+            FilledButton(onPressed: jenis == null ? null : () => Navigator.pop(ctx, true), child: const Text('Buat Draf & Edit Isi')),
+          ]),
+        );
+      }),
     );
-    if (ok != true || !context.mounted) return;
-    if (await runAction(context, () => Api.I.post('/api/layanan/surat/saya', body: {'jenis': j, 'keperluan': kep.text}), sukses: 'Pengajuan surat terkirim')) reload();
+    if (ok != true || !mounted) return;
+    Map? s;
+    if (await runAction(context, () async => s = await Api.I.post('/api/layanan/persuratan/saya', body: {'jenis': jenis, 'keperluan': kep.text.isEmpty ? null : kep.text}) as Map, sukses: 'Draf dibuat, lengkapi isi surat') && s != null && mounted) {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => MhsSuratEditor(s!['id'], templat.cast<Map>().firstWhere((x) => x['jenis'] == jenis))));
+      setState(() => _ver++);
+    }
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Pengajuan Surat')),
+        appBar: AppBar(title: const Text('Persuratan')),
         body: AsyncView<(List, List)>(
+          key: ValueKey(_ver),
           load: () async {
-            final r = await Future.wait([Api.I.get('/api/layanan/surat/saya'), Api.I.get('/api/layanan/surat/jenis')]);
+            final r = await Future.wait([Api.I.get('/api/layanan/persuratan/saya'), Api.I.get('/api/layanan/persuratan/templat')]);
             return (r[0] as List, r[1] as List);
           },
           builder: (c, d, reload) => Scaffold(
-            floatingActionButton: FloatingActionButton.extended(onPressed: () => _ajukan(context, d.$2, reload), icon: const Icon(Icons.add_rounded), label: const Text('Ajukan Surat'), backgroundColor: AppColors.primary, foregroundColor: Colors.white),
-            body: ListView(padding: const EdgeInsets.all(16), children: d.$1.isEmpty ? const [EmptyState('Belum ada pengajuan surat.')] : d.$1.map((s) => Padding(padding: const EdgeInsets.only(bottom: 10), child: Card(child: ListTile(
-              leading: IconBox(Icons.mail_outline_rounded, color: AppColors.status(s['status'])),
-              title: Text(s['jenis'], style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
-              subtitle: Text('${s['keperluan']}\n${tanggal(s['created_at'])}${s['nomor_surat'] != null ? ' · No. ${s['nomor_surat']}' : ''}${s['catatan'] != null ? '\n${s['catatan']}' : ''}', style: const TextStyle(fontSize: 11.5)),
-              isThreeLine: true, trailing: StatusBadge(s['status']),
-              onTap: s['status'] != 'selesai' ? null : () async {
-                final doc = await Api.I.get('/api/layanan/surat/saya/${s['id']}/dokumen');
-                if (!context.mounted) return;
-                showModalBottomSheet(context: context, isScrollControlled: true, builder: (_) => SuratPreview(doc));
-              },
-            )))).toList()),
+            floatingActionButton: FloatingActionButton.extended(onPressed: () => _buat(d.$2), icon: const Icon(Icons.add_rounded), label: const Text('Buat Surat'), backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+            body: ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 90), children: [
+              if (d.$1.isEmpty) const EmptyState('Belum ada surat. Tekan "Buat Surat" untuk menyusun surat keterangan kuliah.'),
+              ...d.$1.map((s) => Padding(padding: const EdgeInsets.only(bottom: 10), child: Card(child: ListTile(
+                leading: IconBox(Icons.description_outlined, color: AppColors.status(s['status'])),
+                title: Text(s['jenis'], style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+                subtitle: Text('${s['program_studi']} · Smt ${s['semester']} ${s['tahun_ajaran']}\n${s['nomor_surat'] != null ? 'No. ${s['nomor_surat']} · ' : ''}Diubah ${tanggal(s['updated_at'], withTime: true)}${s['catatan_admin'] != null ? '\nAdmin: ${s['catatan_admin']}' : ''}', style: const TextStyle(fontSize: 11.5)),
+                isThreeLine: true, trailing: StatusBadge(s['status']),
+                onTap: () async {
+                  await Navigator.push(context, MaterialPageRoute(builder: (_) => MhsSuratDetail(s['id'], d.$2.cast<Map>().firstWhere((x) => x['jenis'] == s['jenis']))));
+                  reload();
+                },
+              )))),
+            ]),
           ),
         ),
       );
 }
 
-class SuratPreview extends StatelessWidget {
-  final Map d;
-  const SuratPreview(this.d, {super.key});
+class MhsSuratDetail extends StatefulWidget {
+  final int id;
+  final Map templat;
+  const MhsSuratDetail(this.id, this.templat, {super.key});
+  @override
+  State<MhsSuratDetail> createState() => _MhsSuratDetailState();
+}
+
+class _MhsSuratDetailState extends State<MhsSuratDetail> {
+  int _ver = 0;
+  void _refresh() => setState(() => _ver++);
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('Detail Surat')),
+        body: AsyncView<(Map, Map)>(
+          key: ValueKey(_ver),
+          load: () async {
+            final r = await Future.wait([Api.I.get('/api/layanan/persuratan/saya/${widget.id}'), Api.I.get('/api/layanan/persuratan/saya/${widget.id}/dokumen')]);
+            return (r[0] as Map, r[1] as Map);
+          },
+          builder: (c, d, _) {
+            final s = d.$1, bolehEdit = s['status'] == 'draft' || s['status'] == 'revisi';
+            return ListView(padding: const EdgeInsets.all(16), children: [
+              Row(children: [Expanded(child: Text(s['jenis'], style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800))), StatusBadge(s['status'])]),
+              const SizedBox(height: 4),
+              Text('Dibuat ${tanggal(s['created_at'], withTime: true)}${s['diajukan_at'] != null ? ' · Diajukan ${tanggal(s['diajukan_at'], withTime: true)}' : ''}', style: const TextStyle(fontSize: 11.5, color: AppColors.muted)),
+              if (s['catatan_admin'] != null) Container(
+                margin: const EdgeInsets.only(top: 10), padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: AppColors.status(s['status']).withValues(alpha: .1), borderRadius: BorderRadius.circular(12)),
+                child: Text('Catatan admin${s['ditinjau_oleh'] != null ? ' (${s['ditinjau_oleh']})' : ''}: ${s['catatan_admin']}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              ),
+              const SizedBox(height: 14),
+              SuratDokumenView(d.$2),
+              const SizedBox(height: 16),
+              if (bolehEdit) Row(children: [
+                Expanded(child: OutlinedButton.icon(style: OutlinedButton.styleFrom(minimumSize: const Size(0, 46)), icon: const Icon(Icons.edit_outlined), label: const Text('Edit Isi'), onPressed: () async {
+                  await Navigator.push(context, MaterialPageRoute(builder: (_) => MhsSuratEditor(widget.id, widget.templat)));
+                  _refresh();
+                })),
+                const SizedBox(width: 10),
+                Expanded(child: FilledButton.icon(style: FilledButton.styleFrom(minimumSize: const Size(0, 46)), icon: const Icon(Icons.send_rounded), label: const Text('Ajukan ke Admin'), onPressed: () async {
+                  if (!await konfirmasi(context, 'Ajukan surat?', 'Setelah diajukan, isi surat tidak dapat diubah sampai admin meminta revisi.', ya: 'Ajukan')) return;
+                  if (!context.mounted) return;
+                  if (await runAction(context, () => Api.I.post('/api/layanan/persuratan/saya/${widget.id}/ajukan'), sukses: 'Surat diajukan ke admin')) _refresh();
+                })),
+              ]),
+              if (s['status'] == 'draft') Padding(padding: const EdgeInsets.only(top: 8), child: TextButton.icon(style: TextButton.styleFrom(foregroundColor: AppColors.danger), icon: const Icon(Icons.delete_outline), label: const Text('Hapus draf'), onPressed: () async {
+                if (!await konfirmasi(context, 'Hapus draf?', 'Draf surat ini akan dihapus permanen.', ya: 'Hapus', bahaya: true)) return;
+                if (!context.mounted) return;
+                if (await runAction(context, () => Api.I.delete('/api/layanan/persuratan/saya/${widget.id}'), sukses: 'Draf dihapus') && context.mounted) Navigator.pop(context);
+              })),
+              if (s['status'] == 'diajukan') const Text('Menunggu peninjauan admin.', textAlign: TextAlign.center, style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
+            ]);
+          },
+        ),
+      );
+}
+
+/// Formulir edit isi surat; kolom mengikuti definisi templat dari server.
+class MhsSuratEditor extends StatefulWidget {
+  final int id;
+  final Map templat;
+  const MhsSuratEditor(this.id, this.templat, {super.key});
+  @override
+  State<MhsSuratEditor> createState() => _MhsSuratEditorState();
+}
+
+class _MhsSuratEditorState extends State<MhsSuratEditor> {
+  final _form = GlobalKey<FormState>();
+  final Map<String, TextEditingController> _c = {};
+  final Map<String, String?> _pilihan = {};
+  DateTime? _tglLahir;
+  Map? _s;
+  bool _loading = true, _saving = false;
+  String? _err;
+
+  List<Map> get _kolom => (widget.templat['kolom'] as List).cast<Map>();
+
+  @override
+  void initState() {
+    super.initState();
+    _muat();
+  }
+
+  Future<void> _muat() async {
+    try {
+      final s = await Api.I.get('/api/layanan/persuratan/saya/${widget.id}') as Map;
+      for (final k in _kolom) {
+        final key = k['key'] as String, v = s[key]?.toString() ?? '';
+        if (k['tipe'] == 'date') {
+          _tglLahir = DateTime.tryParse(v);
+        } else if (k['pilihan'] != null) {
+          _pilihan[key] = (k['pilihan'] as List).contains(v) ? v : null;
+        } else {
+          _c[key] = TextEditingController(text: v);
+        }
+      }
+      setState(() { _s = s; _loading = false; });
+    } catch (e) {
+      setState(() { _err = e.toString(); _loading = false; });
+    }
+  }
+
+  Map<String, dynamic> _body() => {
+        for (final k in _kolom.where((k) => k['readonly'] != true))
+          k['key']: k['tipe'] == 'date'
+              ? (_tglLahir == null ? null : '${_tglLahir!.year.toString().padLeft(4, '0')}-${_tglLahir!.month.toString().padLeft(2, '0')}-${_tglLahir!.day.toString().padLeft(2, '0')}')
+              : k['pilihan'] != null ? _pilihan[k['key']] : (_c[k['key']]!.text.trim().isEmpty ? null : _c[k['key']]!.text.trim()),
+      };
+
+  Future<void> _simpan({bool ajukan = false}) async {
+    if (!_form.currentState!.validate()) return;
+    if (_kolom.any((k) => k['tipe'] == 'date' && k['wajib'] == true) && _tglLahir == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tanggal lahir wajib diisi')));
+      return;
+    }
+    setState(() => _saving = true);
+    var ok = await runAction(context, () => Api.I.put('/api/layanan/persuratan/saya/${widget.id}', body: _body()), sukses: ajukan ? null : 'Isi surat tersimpan');
+    if (ok && ajukan && mounted) ok = await runAction(context, () => Api.I.post('/api/layanan/persuratan/saya/${widget.id}/ajukan'), sukses: 'Surat tersimpan & diajukan ke admin');
+    if (mounted) setState(() => _saving = false);
+    if (ok && mounted) Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final s = d['surat'], m = d['mahasiswa'], inst = d['institusi'];
-    return DraggableScrollableSheet(expand: false, initialChildSize: .85, builder: (_, sc) => ListView(controller: sc, padding: const EdgeInsets.fromLTRB(24, 0, 24, 40), children: [
-      Center(child: Column(children: [
-        Text(inst['universitas'].toString().toUpperCase(), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
-        Text(inst['nama'].toString().toUpperCase(), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-        Text('${inst['alamat']} · ${inst['telepon']}', style: const TextStyle(fontSize: 10, color: AppColors.muted), textAlign: TextAlign.center),
-      ])),
-      const Divider(thickness: 2, color: Colors.black, height: 24),
-      Center(child: Column(children: [Text(s['jenis'].toString().toUpperCase(), style: const TextStyle(fontWeight: FontWeight.w800, decoration: TextDecoration.underline)), Text('Nomor: ${s['nomor_surat']}', style: const TextStyle(fontSize: 12))])),
-      const SizedBox(height: 16),
-      const Text('Yang bertanda tangan di bawah ini, Direktur Program Pascasarjana, menerangkan bahwa:', style: TextStyle(fontSize: 13, height: 1.5)),
-      const SizedBox(height: 8),
-      InfoRow('Nama', m['nama']), InfoRow('NIM', m['nim']), InfoRow('Program Studi', '${m['prodi_jenjang']} ${m['prodi_nama']}'), InfoRow('Semester', '${m['semester_ke']}'), InfoRow('Status', cap(m['status'])),
-      const SizedBox(height: 8),
-      Text('adalah benar mahasiswa aktif Program Pascasarjana ${inst['universitas']}. Surat ini dibuat untuk keperluan: ${s['keperluan']}.', style: const TextStyle(fontSize: 13, height: 1.5)),
-      const SizedBox(height: 20),
-      Align(alignment: Alignment.centerRight, child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [Text('Makassar, ${tanggal(d['tanggal_terbit'])}', style: const TextStyle(fontSize: 12)), const Text('Direktur,', style: TextStyle(fontSize: 12)), const SizedBox(height: 40), const Text('Prof. Dr. H. Direktur Pascasarjana, M.Pd.', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, decoration: TextDecoration.underline))])),
-    ]));
+    if (_loading) return Scaffold(appBar: AppBar(title: const Text('Edit Isi Surat')), body: const Center(child: CircularProgressIndicator()));
+    if (_err != null || _s == null) return Scaffold(appBar: AppBar(title: const Text('Edit Isi Surat')), body: Center(child: Text(_err ?? 'Gagal memuat')));
+    final bolehEdit = _s!['status'] == 'draft' || _s!['status'] == 'revisi';
+    return Scaffold(
+      appBar: AppBar(title: Text(_s!['jenis'])),
+      body: Form(
+        key: _form,
+        child: ListView(padding: const EdgeInsets.all(16), children: [
+          if (!bolehEdit) Container(padding: const EdgeInsets.all(12), margin: const EdgeInsets.only(bottom: 12), decoration: BoxDecoration(color: AppColors.warning.withValues(alpha: .12), borderRadius: BorderRadius.circular(12)), child: Text('Surat berstatus "${_s!['status']}" tidak dapat diedit.', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600))),
+          if (_s!['catatan_admin'] != null) Container(padding: const EdgeInsets.all(12), margin: const EdgeInsets.only(bottom: 12), decoration: BoxDecoration(color: AppColors.info.withValues(alpha: .1), borderRadius: BorderRadius.circular(12)), child: Text('Catatan admin: ${_s!['catatan_admin']}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600))),
+          const Text('Periksa dan perbaiki data di bawah ini. Data akan dicetak persis seperti yang Anda isi.', style: TextStyle(fontSize: 12.5, color: AppColors.muted)),
+          const SizedBox(height: 12),
+          for (final k in _kolom) Padding(padding: const EdgeInsets.only(bottom: 12), child: _field(k, bolehEdit)),
+          const SizedBox(height: 8),
+          if (bolehEdit) Row(children: [
+            Expanded(child: OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)), onPressed: _saving ? null : () => _simpan(), child: const Text('Simpan Draf'))),
+            const SizedBox(width: 10),
+            Expanded(child: FilledButton.icon(style: FilledButton.styleFrom(minimumSize: const Size(0, 48)), onPressed: _saving ? null : () => _simpan(ajukan: true), icon: const Icon(Icons.send_rounded), label: const Text('Simpan & Ajukan'))),
+          ]),
+        ]),
+      ),
+    );
+  }
+
+  Widget _field(Map k, bool bolehEdit) {
+    final key = k['key'] as String, label = k['label'] as String, wajib = k['wajib'] == true, readonly = k['readonly'] == true || !bolehEdit;
+    if (k['tipe'] == 'date') {
+      return InkWell(
+        onTap: readonly ? null : () async {
+          final p = await showDatePicker(context: context, initialDate: _tglLahir ?? DateTime(1995), firstDate: DateTime(1940), lastDate: DateTime.now(), locale: const Locale('id', 'ID'));
+          if (p != null) setState(() => _tglLahir = p);
+        },
+        child: InputDecorator(
+          decoration: InputDecoration(labelText: '$label${wajib ? ' *' : ''}', suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18)),
+          child: Text(_tglLahir == null ? 'Pilih tanggal' : tanggal(_tglLahir), style: TextStyle(fontSize: 14, color: _tglLahir == null ? AppColors.muted : AppColors.text)),
+        ),
+      );
+    }
+    if (k['pilihan'] != null) {
+      return DropdownButtonFormField<String>(
+        value: _pilihan[key], decoration: InputDecoration(labelText: '$label${wajib ? ' *' : ''}'),
+        items: (k['pilihan'] as List).map((x) => DropdownMenuItem<String>(value: x, child: Text(x))).toList(),
+        onChanged: readonly ? null : (v) => setState(() => _pilihan[key] = v),
+        validator: (v) => wajib && v == null ? '$label wajib dipilih' : null,
+      );
+    }
+    return TextFormField(
+      controller: _c[key], readOnly: readonly, maxLines: k['multiline'] == true ? 3 : 1,
+      decoration: InputDecoration(labelText: '$label${wajib ? ' *' : ''}', helperText: k['readonly'] == true ? 'Diambil dari data akademik' : null),
+      validator: (v) => wajib && (v == null || v.trim().isEmpty) ? '$label wajib diisi' : null,
+    );
   }
 }

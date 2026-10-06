@@ -77,7 +77,7 @@ services/
                        perwalian, laporan
   tesis_service/       pengajuan judul + proposal, penetapan pembimbing, tahapan, log bimbingan
   keuangan_service/    tagihan, generate SPP massal, unggah bukti, verifikasi, rekap
-  layanan_service/     pengajuan surat (+ data cetak JSON), pengumuman, PMB (→ otomatis buat akun)
+  layanan_service/     persuratan berbasis templat (draf → edit → ajukan → admin tinjau/setujui + penomoran), pengumuman, PMB (→ otomatis buat akun)
   notifikasi_service/  notifikasi per pengguna/peran, log audit
 run_all.py             orkestrasi lokal          seed.py  data demo          smoke_test.py  uji E2E
 Dockerfile, docker-compose.yml, .env.docker, .env.example
@@ -87,11 +87,11 @@ Dockerfile, docker-compose.yml, .env.docker, .env.example
 
 **Publik** — `publik/beranda`, `akademik/prodi`, `akademik/prodi/{id}/kurikulum`, `akademik/kalender`, `layanan/pengumuman`, `layanan/pmb/daftar`, `layanan/pmb/cek/{nomor}`.
 
-**Mahasiswa** — `dashboard/mahasiswa`; `akademik/mahasiswa/me[/ringkasan|/biodata]`; `akademik/krs/saya|tersedia`, `POST akademik/krs`, `DELETE akademik/krs/{id}`; `akademik/nilai/khs|transkrip`; `akademik/presensi/saya`; `tesis/saya` (+`/bimbingan`); `keuangan/saya` (+`/ringkasan`, `/{id}/bayar`); `layanan/surat/saya` (+`/{id}/dokumen`); `layanan/pengumuman/untuk-saya`; `notifikasi`.
+**Mahasiswa** — `dashboard/mahasiswa`; `akademik/mahasiswa/me[/ringkasan|/biodata]`; `akademik/krs/saya|tersedia`, `POST akademik/krs`, `DELETE akademik/krs/{id}`; `akademik/nilai/khs|transkrip`; `akademik/presensi/saya`; `tesis/saya` (+`/bimbingan`); `keuangan/saya` (+`/ringkasan`, `/{id}/bayar`); `layanan/persuratan/templat`; `layanan/persuratan/saya` (`POST` buat draf dari data akademik, `GET|PUT|DELETE /{id}`, `POST /{id}/ajukan`, `GET /{id}/dokumen`); `layanan/pengumuman/untuk-saya`; `notifikasi`.
 
 **Dosen** — `dashboard/dosen`; `akademik/dosen/me[/kelas|/jadwal|/perwalian|/ringkasan]`; `akademik/kelas/{id}/peserta`; `PUT akademik/nilai/kelas/{id}`, `POST .../isi-kehadiran`; `akademik/presensi/kelas/{id}/pertemuan|rekap`, `PUT akademik/presensi/pertemuan/{id}`; `akademik/krs/{id}/setujui|tolak` (PA); `tesis/bimbingan` (+`/{id}`, `/{id}/log`, `/log/{id}`, `/{id}/status`, `/log-menunggu`).
 
-**Admin/Staf** — `dashboard/admin`; CRUD `akademik/prodi|tahun-akademik|matakuliah|kalender|dosen|mahasiswa|kelas`; `akademik/krs` + `setujui-semua`; `akademik/laporan/*`; `tesis` (+`PUT /{id}` pembimbing/status/nilai); `keuangan` (+`generate`, `/{id}/verifikasi|tolak`, `ringkasan`); `layanan/surat` (+`PATCH /{id}`), `layanan/pengumuman` CRUD, `layanan/pmb` (+`PATCH /{id}` dengan `buat_akun`); `users`; `log`.
+**Admin/Staf** — `dashboard/admin`; CRUD `akademik/prodi|tahun-akademik|matakuliah|kalender|dosen|mahasiswa|kelas`; `akademik/krs` + `setujui-semua`; `akademik/laporan/*`; `tesis` (+`PUT /{id}` pembimbing/status/nilai); `keuangan` (+`generate`, `/{id}/verifikasi|tolak`, `ringkasan`); `layanan/persuratan?status=` (+`GET /{id}`, `/{id}/dokumen`, `/{id}/nomor-usulan`, `PATCH /{id}/tinjau` aksi `setujui|revisi|tolak`), `layanan/pengumuman` CRUD, `layanan/pmb` (+`PATCH /{id}` dengan `buat_akun`); `users`; `log`.
 
 ## 4. Keamanan
 JWT (HS256, 12 jam) via `Authorization: Bearer`; password PBKDF2-SHA256 200k iterasi; RBAC per endpoint + pemeriksaan kepemilikan (dosen hanya kelas/bimbingannya, mahasiswa hanya datanya); endpoint `/internal/*` hanya menerima `X-Internal-Key` dan **diblokir di gateway**; validasi skema Pydantic; unggahan dibatasi tipe (pdf/jpg/png) & ukuran (5 MB) dengan nama acak; CORS dapat dibatasi di `create_service`. Untuk produksi: set `SECRET_KEY`/`INTERNAL_KEY` via environment, HTTPS di depan gateway, dan DB server.

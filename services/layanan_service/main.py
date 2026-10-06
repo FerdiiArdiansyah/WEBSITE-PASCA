@@ -11,6 +11,8 @@ from services.common.db import Base, make_session_factory
 from services.common.http import audit, call, notify, notify_role, safe_call
 from services.common.utils import Msg, create_service
 
+from . import persuratan as ps
+
 engine, SessionLocal, get_db = make_session_factory("layanan")
 
 JENIS_SURAT = ("Surat Keterangan Aktif Kuliah", "Surat Izin Penelitian", "Surat Pengantar Observasi",
@@ -332,9 +334,11 @@ def proses_pendaftar(pid: int, data: PendaftarProses, cu: CurrentUser = admin, d
 def i_statistik(db: Session = Depends(get_db)):
     from sqlalchemy import func
     return {"pendaftar_baru": db.query(Pendaftar).filter_by(status="baru").count(),
-            "surat_pending": db.query(PengajuanSurat).filter(PengajuanSurat.status.in_(["diajukan", "diproses"])).count(),
+            "surat_pending": db.query(PengajuanSurat).filter(PengajuanSurat.status.in_(["diajukan", "diproses"])).count()
+            + db.query(ps.Persuratan).filter_by(status="diajukan").count(),
+            "persuratan_per_status": {k: v for k, v in db.query(ps.Persuratan.status, func.count()).group_by(ps.Persuratan.status)},
             "pengumuman": db.query(Pengumuman).count()}
 
 
-for r in (surat, peng, pmb, internal):
+for r in (surat, ps.buat_router(get_db), peng, pmb, internal):
     app.include_router(r)

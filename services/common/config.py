@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     EMAIL: str = "pasca@unismuh.ac.id"
     TELEPON: str = "(0411) 866 972"
 
+    # Persuratan (penandatangan & kode klasifikasi nomor surat)
+    DIREKTUR_NAMA: str = "Prof. Erwin Akib, M.Pd., Ph.D."
+    DIREKTUR_JABATAN: str = "Direktur"
+    DIREKTUR_NBM: str = "860 934"
+    KODE_SURAT: str = "A.4.II"
+
     # Keamanan
     SECRET_KEY: str = "ganti-dengan-kunci-rahasia-yang-kuat"
     INTERNAL_KEY: str = "kunci-internal-antar-service"

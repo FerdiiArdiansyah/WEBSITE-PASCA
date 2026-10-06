@@ -24,3 +24,4 @@ mobile/ios/Flutter/ephemeral/
 mobile/ios/Flutter/flutter_export_environment.sh
 mobile/.idea/
 *.iml
+run_all.out

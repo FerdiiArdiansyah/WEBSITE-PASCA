@@ -5,6 +5,7 @@ import '../core/api.dart';
 import '../core/format.dart';
 import '../core/session.dart';
 import '../core/theme.dart';
+import '../widgets/surat_dokumen.dart';
 import '../widgets/ui.dart';
 import 'auth_screens.dart';
 import 'mahasiswa_screens.dart';
@@ -59,7 +60,7 @@ class AdmDashboard extends StatelessWidget {
           final tugas = [
             ('KRS menunggu verifikasi', ak['krs_menunggu'] ?? 0, Icons.playlist_add_check_rounded, const AdmKrs()),
             ('Pembayaran menunggu verifikasi', d['bayar_menunggu'] ?? 0, Icons.payments_rounded, const AdmKeuangan(statusAwal: 'menunggu verifikasi')),
-            ('Pengajuan surat belum selesai', lay['surat_pending'] ?? 0, Icons.mail_rounded, const AdmSurat()),
+            ('Surat menunggu peninjauan', lay['surat_pending'] ?? 0, Icons.mail_rounded, const AdmSurat()),
             ('Pendaftar PMB baru', lay['pendaftar_baru'] ?? 0, Icons.person_add_rounded, const AdmPmb()),
             ('Pengajuan judul tesis', tesis['pengajuan'] ?? 0, Icons.auto_stories_rounded, const AdmTesis(statusAwal: 'pengajuan')),
           ];
@@ -169,7 +170,7 @@ class AdmLayananMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = [
-      (Icons.mail_rounded, 'Pengajuan Surat', 'Proses & penomoran', AppColors.primary, const AdmSurat()),
+      (Icons.mail_rounded, 'Persuratan', 'Tinjau, setujui & nomori', AppColors.primary, const AdmSurat()),
       (Icons.person_add_rounded, 'PMB / Pendaftar', 'Seleksi & buat akun', AppColors.success, const AdmPmb()),
       (Icons.campaign_rounded, 'Pengumuman', 'Publikasi informasi', AppColors.warning, const AdmPengumuman()),
       (Icons.manage_accounts_rounded, 'Pengguna', 'Akun & reset password', AppColors.danger, const AdmPengguna()),
@@ -455,6 +456,7 @@ class _AdmTesisState extends State<AdmTesis> {
 }
 
 // =============================================================== SURAT
+/// Peninjauan persuratan: admin membaca isi yang disusun mahasiswa lalu menyetujui / minta revisi / menolak.
 class AdmSurat extends StatefulWidget {
   const AdmSurat({super.key});
   @override
@@ -464,42 +466,123 @@ class AdmSurat extends StatefulWidget {
 class _AdmSuratState extends State<AdmSurat> {
   String? status = 'diajukan';
   int _ver = 0;
-  Future<void> _proses(Map s) async {
-    String st = s['status'];
-    final nomor = TextEditingController(text: s['nomor_surat']), cat = TextEditingController(text: s['catatan']);
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('Peninjauan Surat')),
+        body: Column(children: [
+          Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 0), child: FilterChips(items: const [('diajukan', 'Menunggu'), ('revisi', 'Revisi'), ('disetujui', 'Disetujui'), ('ditolak', 'Ditolak'), ('', 'Semua')], selected: status ?? '', onChanged: (v) => setState(() => status = v == '' ? null : v))),
+          Expanded(child: AsyncView<List>(
+            key: ValueKey('$status$_ver'),
+            load: () async => (await Api.I.get('/api/layanan/persuratan', query: {'status': status})) as List,
+            builder: (c, d, _) => ListView(padding: const EdgeInsets.all(16), children: d.isEmpty ? const [EmptyState('Tidak ada surat pada status ini.')] : d.map((s) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Card(child: ListTile(
+              leading: IconBox(Icons.description_outlined, color: AppColors.status(s['status'])),
+              title: Text('${s['nama']} (${s['nim']})', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+              subtitle: Text('${s['jenis']} · ${s['program_studi']}\n${s['diajukan_at'] != null ? 'Diajukan ${tanggal(s['diajukan_at'], withTime: true)}' : 'Diubah ${tanggal(s['updated_at'], withTime: true)}'}${s['nomor_surat'] != null ? ' · ${s['nomor_surat']}' : ''}', style: const TextStyle(fontSize: 11.5)),
+              isThreeLine: true, trailing: StatusBadge(s['status']),
+              onTap: () async {
+                await Navigator.push(context, MaterialPageRoute(builder: (_) => AdmSuratDetail(s['id'])));
+                setState(() => _ver++);
+              },
+            )))).toList()),
+          )),
+        ]),
+      );
+}
+
+class AdmSuratDetail extends StatefulWidget {
+  final int id;
+  const AdmSuratDetail(this.id, {super.key});
+  @override
+  State<AdmSuratDetail> createState() => _AdmSuratDetailState();
+}
+
+class _AdmSuratDetailState extends State<AdmSuratDetail> {
+  int _ver = 0;
+
+  Future<void> _setujui(Map s) async {
+    final usul = await Api.I.get('/api/layanan/persuratan/${widget.id}/nomor-usulan') as Map;
+    if (!mounted) return;
+    final nomor = TextEditingController(text: usul['nomor_surat']), hijriah = TextEditingController(text: usul['tanggal_hijriah']), cat = TextEditingController();
+    DateTime tgl = DateTime.parse(usul['tanggal_surat']);
     final ok = await showDialog<bool>(context: context, builder: (c) => StatefulBuilder(builder: (c, setS) => AlertDialog(
-      title: Text(s['jenis']),
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        Text('${s['mahasiswa_nama']} (${s['nim']})\n${s['keperluan']}', style: const TextStyle(fontSize: 12.5, color: AppColors.muted)),
+      title: const Text('Setujui & Terbitkan'),
+      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text('${s['nama']} (${s['nim']})\n${s['jenis']}', style: const TextStyle(fontSize: 12.5, color: AppColors.muted)),
         const SizedBox(height: 12),
-        DropdownButtonFormField<String>(value: st, decoration: const InputDecoration(labelText: 'Status'), items: ['diajukan', 'diproses', 'selesai', 'ditolak'].map((x) => DropdownMenuItem(value: x, child: Text(cap(x)))).toList(), onChanged: (v) => setS(() => st = v!)),
+        TextField(controller: nomor, decoration: const InputDecoration(labelText: 'Nomor surat', helperText: 'Usulan otomatis, dapat diubah')),
         const SizedBox(height: 10),
-        TextField(controller: nomor, decoration: const InputDecoration(labelText: 'Nomor surat (kosong = otomatis)')),
+        InkWell(
+          onTap: () async {
+            final p = await showDatePicker(context: c, initialDate: tgl, firstDate: DateTime(2020), lastDate: DateTime(2100), locale: const Locale('id', 'ID'));
+            if (p == null) return;
+            final u = await Api.I.get('/api/layanan/persuratan/${widget.id}/nomor-usulan', query: {'tanggal': '${p.year}-${p.month.toString().padLeft(2, '0')}-${p.day.toString().padLeft(2, '0')}'}) as Map;
+            setS(() { tgl = p; nomor.text = u['nomor_surat']; hijriah.text = u['tanggal_hijriah']; });
+          },
+          child: InputDecorator(decoration: const InputDecoration(labelText: 'Tanggal surat (Masehi)', suffixIcon: Icon(Icons.calendar_today_outlined, size: 18)), child: Text(tanggal(tgl), style: const TextStyle(fontSize: 14))),
+        ),
         const SizedBox(height: 10),
-        TextField(controller: cat, decoration: const InputDecoration(labelText: 'Catatan')),
-      ]),
-      actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Batal')), FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(0, 44)), onPressed: () => Navigator.pop(c, true), child: const Text('Simpan'))],
+        TextField(controller: hijriah, decoration: const InputDecoration(labelText: 'Tanggal Hijriah', helperText: 'Perkiraan kalender; sesuaikan bila perlu')),
+        const SizedBox(height: 10),
+        TextField(controller: cat, decoration: const InputDecoration(labelText: 'Catatan (opsional)')),
+      ])),
+      actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Batal')), FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(0, 44)), onPressed: () => Navigator.pop(c, true), child: const Text('Setujui'))],
     )));
     if (ok != true || !mounted) return;
-    if (await runAction(context, () => Api.I.patch('/api/layanan/surat/${s['id']}', body: {'status': st, 'nomor_surat': nomor.text.isEmpty ? null : nomor.text, 'catatan': cat.text}), sukses: 'Surat diperbarui')) setState(() => _ver++);
+    if (await runAction(context, () => Api.I.patch('/api/layanan/persuratan/${widget.id}/tinjau', body: {
+          'aksi': 'setujui', 'nomor_surat': nomor.text.trim(), 'tanggal_hijriah': hijriah.text.trim(),
+          'tanggal_surat': '${tgl.year}-${tgl.month.toString().padLeft(2, '0')}-${tgl.day.toString().padLeft(2, '0')}',
+          'catatan': cat.text.trim().isEmpty ? null : cat.text.trim(),
+        }), sukses: 'Surat disetujui & diberi nomor')) setState(() => _ver++);
+  }
+
+  Future<void> _tolakAtauRevisi(String aksi) async {
+    final cat = await inputDialog(context, aksi == 'revisi' ? 'Minta Revisi' : 'Tolak Surat', label: aksi == 'revisi' ? 'Bagian yang perlu diperbaiki mahasiswa *' : 'Alasan penolakan *', maxLines: 3);
+    if (cat == null || cat.trim().isEmpty || !mounted) return;
+    if (await runAction(context, () => Api.I.patch('/api/layanan/persuratan/${widget.id}/tinjau', body: {'aksi': aksi, 'catatan': cat.trim()}), sukses: aksi == 'revisi' ? 'Dikembalikan ke mahasiswa untuk revisi' : 'Surat ditolak')) setState(() => _ver++);
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Pengajuan Surat')),
-        body: Column(children: [
-          Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 0), child: FilterChips(items: const [('', 'Semua'), ('diajukan', 'Diajukan'), ('diproses', 'Diproses'), ('selesai', 'Selesai'), ('ditolak', 'Ditolak')], selected: status ?? '', onChanged: (v) => setState(() => status = v == '' ? null : v))),
-          Expanded(child: AsyncView<List>(
-            key: ValueKey('$status$_ver'),
-            load: () async => (await Api.I.get('/api/layanan/surat', query: {'status': status})) as List,
-            builder: (c, d, _) => ListView(padding: const EdgeInsets.all(16), children: d.isEmpty ? const [EmptyState('Tidak ada pengajuan.')] : d.map((s) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Card(child: ListTile(
-              leading: IconBox(Icons.mail_outline_rounded, color: AppColors.status(s['status'])),
-              title: Text(s['jenis'], style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
-              subtitle: Text('${s['mahasiswa_nama']} (${s['nim']})\n${s['keperluan']}\n${tanggal(s['created_at'])}${s['nomor_surat'] != null ? ' · ${s['nomor_surat']}' : ''}', style: const TextStyle(fontSize: 11.5)),
-              isThreeLine: true, trailing: StatusBadge(s['status']), onTap: () => _proses(s),
-            )))).toList()),
-          )),
-        ]),
+        appBar: AppBar(title: const Text('Tinjau Surat')),
+        body: AsyncView<(Map, Map)>(
+          key: ValueKey(_ver),
+          load: () async {
+            final r = await Future.wait([Api.I.get('/api/layanan/persuratan/${widget.id}'), Api.I.get('/api/layanan/persuratan/${widget.id}/dokumen')]);
+            return (r[0] as Map, r[1] as Map);
+          },
+          builder: (c, d, _) {
+            final s = d.$1, bisaTinjau = s['status'] == 'diajukan' || s['status'] == 'revisi';
+            return ListView(padding: const EdgeInsets.all(16), children: [
+              Row(children: [Expanded(child: Text(s['jenis'], style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800))), StatusBadge(s['status'])]),
+              const SizedBox(height: 4),
+              Text('${s['nama']} (${s['nim']})${s['diajukan_at'] != null ? ' · Diajukan ${tanggal(s['diajukan_at'], withTime: true)}' : ''}', style: const TextStyle(fontSize: 12, color: AppColors.muted)),
+              if (s['keperluan'] != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Keperluan: ${s['keperluan']}', style: const TextStyle(fontSize: 12.5))),
+              if (s['catatan_admin'] != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Catatan (${s['ditinjau_oleh'] ?? 'admin'}): ${s['catatan_admin']}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600))),
+              const SizedBox(height: 14),
+              SectionCard(title: 'Data yang diisi mahasiswa', child: Column(children: [
+                InfoRow('Nama', s['nama']), InfoRow('NIM', s['nim']),
+                InfoRow('Tempat, Tgl Lahir', '${s['tempat_lahir'] ?? '-'}, ${tanggal(s['tanggal_lahir'])}'),
+                InfoRow('Asal Sekolah', s['asal_sekolah'] ?? '-'), InfoRow('Program', s['program_pendidikan']), InfoRow('Prodi', s['program_studi']),
+                InfoRow('Semester / TA', '${s['semester']} ${s['tahun_ajaran']}'),
+                if (s['nomor_surat'] != null) InfoRow('Nomor surat', s['nomor_surat']),
+                if (s['tanggal_surat'] != null) InfoRow('Tanggal surat', '${s['tanggal_hijriah']} / ${tanggal(s['tanggal_surat'])}'),
+              ])),
+              const SizedBox(height: 12),
+              SuratDokumenView(d.$2),
+              const SizedBox(height: 16),
+              if (bisaTinjau) Column(children: [
+                FilledButton.icon(style: FilledButton.styleFrom(minimumSize: const Size(double.infinity, 48)), onPressed: () => _setujui(s), icon: const Icon(Icons.verified_rounded), label: const Text('Setujui & Terbitkan Nomor')),
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(child: OutlinedButton.icon(style: OutlinedButton.styleFrom(minimumSize: const Size(0, 46)), onPressed: () => _tolakAtauRevisi('revisi'), icon: const Icon(Icons.undo_rounded), label: const Text('Minta Revisi'))),
+                  const SizedBox(width: 10),
+                  Expanded(child: OutlinedButton.icon(style: OutlinedButton.styleFrom(minimumSize: const Size(0, 46), foregroundColor: AppColors.danger), onPressed: () => _tolakAtauRevisi('tolak'), icon: const Icon(Icons.close_rounded), label: const Text('Tolak'))),
+                ]),
+              ]),
+            ]);
+          },
+        ),
       );
 }
 

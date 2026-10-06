@@ -11,7 +11,7 @@ from services.akademik_service import models as ak
 from services.auth_service.models import Base as AuthBase, User, engine as auth_engine, SessionLocal as AuthSession
 from services.keuangan_service.main import Base as KeuBase, Tagihan, engine as keu_engine, SessionLocal as KeuSession
 from services.layanan_service.main import (
-    Base as LayBase, Pendaftar, Pengumuman, PengajuanSurat, engine as lay_engine, SessionLocal as LaySession,
+    Base as LayBase, Pendaftar, Pengumuman, engine as lay_engine, SessionLocal as LaySession,
 )
 from services.notifikasi_service.main import Base as NotBase, engine as not_engine
 from services.tesis_service.main import Base as TesBase, Bimbingan, Tesis, engine as tes_engine, SessionLocal as TesSession
@@ -269,13 +269,7 @@ for m in mahasiswa:
         keu.add(t)
 keu.commit()
 
-# -------------------------------------------------- Surat, Pengumuman, PMB
-for m in random.sample(mahasiswa, 6):
-    lay.add(PengajuanSurat(mahasiswa_id=m.id, mahasiswa_user_id=m.user_id, mahasiswa_nama=m.nama, nim=m.nim,
-                           prodi=f"{m.prodi.jenjang} {m.prodi.nama}",
-                           jenis=random.choice(["Surat Keterangan Aktif Kuliah", "Surat Izin Penelitian", "Surat Pengantar Observasi"]),
-                           keperluan=random.choice(["Pengajuan beasiswa instansi", "Izin penelitian di sekolah mitra", "Keperluan tugas belajar"]),
-                           status=random.choice(["diajukan", "diproses", "selesai"])))
+# -------------------------------------------------- Pengumuman, PMB (persuratan tidak di-seed: dibuat mahasiswa sendiri)
 for judul_p, isi, kat, target, penting in [
     ("Jadwal Pengisian KRS Semester Ganjil 2026/2027", "Pengisian KRS dibuka 1–14 September 2026 melalui portal akademik. Pastikan tagihan SPP telah lunas sebelum mengajukan KRS.", "Akademik", "semua", True),
     ("Pendaftaran Seminar Proposal Tesis Periode Oktober", "Mahasiswa dengan minimal 3 bimbingan disetujui dapat mendaftar seminar proposal paling lambat 20 Oktober 2026.", "Tesis", "mahasiswa", False),
